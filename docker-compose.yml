@@ -1,0 +1,287 @@
+networks:
+  frontend:
+    name: frontend
+
+volumes:
+  n8n_storage:
+  redis_data:
+  postgres_data:
+
+services:
+  traefik:
+    image: traefik:3.1
+    container_name: ${PROVIDER}-${SUBDOMAIN}-traefik
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend
+    ports:
+      - 80:80
+      - 443:443
+    environment:
+      - CF_API_EMAIL=${CF_API_EMAIL}
+      - CF_DNS_API_TOKEN=file:/run/secrets/cfauthtoken
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+    secrets:
+      - cfauthtoken
+      - basicauthuser
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./certs/traefik/acme.json:/acme.json
+      - ./config/traefik/traefik.yml:/traefik.yml:ro
+      - ./config/traefik/config.yml:/config.yml:ro
+      - ./config/traefik/logs/traefik:/var/log/traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=http"
+      - "traefik.http.routers.traefik.rule=Host(`proxy.${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=file:/run/secrets/basicauthuser"
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
+      - "traefik.http.routers.traefik-secure.entrypoints=https"
+      - "traefik.http.routers.traefik-secure.rule=Host(`proxy.${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik-secure.tls=true"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=cloudflare"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].main=${TRAEFIK_DOMAIN}"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.${TRAEFIK_DOMAIN}"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+    profiles:
+      - traefik
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: ${PROVIDER}-${SUBDOMAIN}-n8n
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - n8n_storage:/home/node/.n8n
+      - ./local_files:/files
+    networks:
+      - frontend
+    depends_on:
+      - traefik
+      - watchtower
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n-http.entrypoints=http"
+      - "traefik.http.routers.n8n-http.rule=Host(`n8n.${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.middlewares.n8n-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.n8n-http.middlewares=n8n-https-redirect"
+      - "traefik.http.routers.n8n-https.entrypoints=https"
+      - "traefik.http.routers.n8n-https.rule=Host(`n8n.${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.routers.n8n-https.tls=true"
+      - "traefik.http.routers.n8n-https.tls.certresolver=cloudflare"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+      - "traefik.http.middlewares.n8n-security-headers.headers.SSLRedirect=true"
+      - "traefik.http.middlewares.n8n-security-headers.headers.STSSeconds=315360000"
+      - "traefik.http.middlewares.n8n-security-headers.headers.browserXSSFilter=true"
+      - "traefik.http.middlewares.n8n-security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.n8n-security-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.n8n-security-headers.headers.SSLHost=n8n.${TRAEFIK_DOMAIN}"
+      - "traefik.http.middlewares.n8n-security-headers.headers.STSIncludeSubdomains=true"
+      - "traefik.http.middlewares.n8n-security-headers.headers.STSPreload=true"
+      - "traefik.http.routers.n8n-https.middlewares=n8n-security-headers"
+      - "traefik.docker.network=frontend"
+    profiles:
+      - n8n
+
+  n8n-on-tailscale:
+    image: tailscale/tailscale:latest
+    container_name: ${PROVIDER}-${SUBDOMAIN}-n8n-tailscale
+    ports:
+      - 5678:5678
+    environment:
+      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey-automation --hostname ${PROVIDER}-${SUBDOMAIN}-n8n
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - ./local_files/n8n/tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    restart: unless-stopped
+    secrets:
+      - tsauthkey-automation
+    networks:
+      - frontend
+    labels:
+      - "tailscale.tag=automation"
+    profiles:
+      - n8n
+
+  searxng:
+    container_name: ${PROVIDER}-${SUBDOMAIN}-searxng
+    image: docker.io/searxng/searxng:latest
+    restart: unless-stopped
+    volumes:
+      - ./config/searxng/config:/etc/searxng:rw
+    env_file:
+      - .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+    networks:
+      - frontend
+    depends_on:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.searxng-http.entrypoints=http"
+      - "traefik.http.routers.searxng-http.rule=Host(`search.${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.middlewares.searxng-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.searxng-http.middlewares=searxng-https-redirect"
+      - "traefik.http.routers.searxng-https.entrypoints=https"
+      - "traefik.http.routers.searxng-https.rule=Host(`search.${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.routers.searxng-https.tls=true"
+      - "traefik.http.routers.searxng-https.tls.certresolver=cloudflare"
+      - "traefik.http.services.searxng.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.searxng-security-headers.headers.SSLRedirect=true"
+      - "traefik.http.middlewares.searxng-security-headers.headers.STSSeconds=315360000"
+      - "traefik.http.middlewares.searxng-security-headers.headers.browserXSSFilter=true"
+      - "traefik.http.middlewares.searxng-security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.searxng-security-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.searxng-security-headers.headers.SSLHost=${SEARXNG_HOST}"
+      - "traefik.http.middlewares.searxng-security-headers.headers.STSIncludeSubdomains=true"
+      - "traefik.http.middlewares.searxng-security-headers.headers.STSPreload=true"
+      - "traefik.http.routers.searxng-https.middlewares=searxng-security-headers"
+      - "traefik.docker.network=frontend"
+    profiles:
+      - searxng
+
+  searxng-on-tailscale:
+    image: tailscale/tailscale:latest
+    hostname: ${PROVIDER}-${SUBDOMAIN}-searxng-tailscale
+    environment:
+      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey-search --hostname ${PROVIDER}-${SUBDOMAIN}-searxng
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - ./local_files/searxng/tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    restart: unless-stopped
+    secrets:
+      - tsauthkey-search
+    networks:
+      - frontend
+    labels:
+      - "tailscale.tag=search"
+    profiles:
+      - searxng
+
+  redis:
+    image: redis:7
+    container_name: ${PROVIDER}-${SUBDOMAIN}-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    network_mode: service:redis-on-tailscale
+    env_file:
+      - .env
+    profiles:
+      - redis
+
+  redis-on-tailscale:
+    image: tailscale/tailscale:latest
+    hostname: ${PROVIDER}-${SUBDOMAIN}-redis-tailscale
+    environment:
+      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey-redis --hostname ${PROVIDER}-${SUBDOMAIN}-redis
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - ./local_files/redis/tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    restart: unless-stopped
+    secrets:
+      - tsauthkey-redis
+    networks:
+      - frontend
+    labels:
+      - "tailscale.tag=cache"
+    profiles:
+      - redis
+
+  postgres:
+    image: postgres:16
+    container_name: ${PROVIDER}-${SUBDOMAIN}-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    network_mode: service:postgres-on-tailscale
+    profiles:
+      - postgres
+
+  postgres-on-tailscale:
+    image: tailscale/tailscale:latest
+    hostname: ${PROVIDER}-${SUBDOMAIN}-postgres-tailscale
+    environment:
+      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --hostname ${PROVIDER}-${SUBDOMAIN}-postgres
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - ./local_files/postgres/tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    restart: unless-stopped
+    secrets:
+      - tsauthkey-database
+    networks:
+      - frontend
+    labels:
+      - "tailscale.tag=database"
+    profiles:
+      - postgres
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: ${PROVIDER}-${SUBDOMAIN}-watchtower
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+    networks:
+      - frontend
+
+secrets:
+  basicauthuser:
+    file: ~/.config/homelab/basicauthuser
+  cfauthtoken:
+    file: ~/.config/homelab/cfauthtoken
+  tsauthkey:
+    file: ~/.config/homelab/tsauthkey
+  tsauthkey-automation:
+    file: ~/.config/homelab/tsauthkey-automation
+  tsauthkey-inference:
+    file: ~/.config/homelab/tsauthkey-inference
+  tsauthkey-role-client:
+    file: ~/.config/homelab/tsauthkey-role-client
+  tsauthkey-search:
+    file: ~/.config/homelab/tsauthkey-search
+  tsauthkey-database:
+    file: ~/.config/homelab/tsauthkey-database
+  tsauthkey-redis:
+    file: ~/.config/homelab/tsauthkey-redis
