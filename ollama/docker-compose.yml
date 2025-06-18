@@ -1,14 +1,68 @@
+name: o4a
+
+x-ollama-base: &ollama-base
+  image: docker.io/ollama/ollama:latest
+  pull_policy: always
+  tty: true
+  restart: unless-stopped
+  env_file:
+    - .env
+  volumes:
+    - model_data:/root/.ollama
+  healthcheck:
+    test: ["CMD", "ollama", "ps"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+    start_interval: 2s
+  labels:
+    - com.docker.compose.project=o4a
+    - app.name=ollama
+
+x-tailscale-base: &tailscale-base
+  image: tailscale/tailscale:latest
+  environment:
+    - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname o4a${ENV_TYPE}${ENV_SUFFIX}
+    - TS_STATE_DIR=/var/lib/tailscale
+    - TS_USERSPACE=false
+  volumes:
+    - tail_tun_state:/var/lib/tailscale
+  devices:
+    - /dev/net/tun:/dev/net/tun
+  cap_add:
+    - NET_ADMIN
+  restart: unless-stopped
+  secrets:
+    - tsauthkey
+  healthcheck:
+    test: ["CMD", "tailscale", "status"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+    start_interval: 2s
+  labels:
+    - com.docker.compose.project=o4a
+    - app.name=tailscale
+
 services:
-  engine-local:
-    image: docker.io/ollama/ollama:latest
-    container_name: ollama
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - ollama-data-local:/root/.ollama
+  dev-loc-cpu:
+    <<: *ollama-base
+    ports:
+      - ${OLLAMA_PORT:-11434}:11434
+    runtime: runc
+    profiles:
+      - loc-cpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=loc-cpu
+
+  dev-loc-gpu:
+    <<: *ollama-base
+    ports:
+      - ${OLLAMA_PORT:-11434}:11434
     deploy:
       resources:
         reservations:
@@ -16,23 +70,33 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    ports:
-      - 11434:11434
     profiles:
-      - local
+      - loc-gpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=loc-gpu
 
-  engine-chat:
-    image: docker.io/ollama/ollama:latest
-    container_name: ollama-chat-engine
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-r1}
-    volumes:
-      - ollama-data-chat:/root/.ollama
+  tail-cpu:
+    <<: *ollama-base
+    network_mode: service:tail-tun
+    depends_on:
+      tail-tun:
+        condition: service_healthy
+    runtime: runc
+    profiles:
+      - tail-cpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=tail-cpu
+
+  tail-gpu:
+    <<: *ollama-base
+    network_mode: service:tail-tun
+    depends_on:
+      tail-tun:
+        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -40,219 +104,27 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
-    network_mode: service:tailscale-chat
     profiles:
-      - simplechat
+      - tail-gpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=tail-gpu
 
-  tailscale-chat:
-    image: tailscale/tailscale:latest
-    container_name: ollama-chat
-    environment:
-      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ollama-chat
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - ${PWD}/tailscale-state-chat:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - net_admin
-    restart: unless-stopped
-    secrets:
-      - tsauthkey
-    healthcheck:
-      test: ["CMD", "tailscale", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    ports:
-      - 11435:11435
+  tail-tun:
+    <<: *tailscale-base
     profiles:
-      - simplechat
-
-  engine-basic-tool-calling:
-    image: docker.io/ollama/ollama:latest
-    container_name: ollama-basic-tool-calling-engine
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-r1}
-    volumes:
-      - ollama-data-basic-tool-calling:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
-    network_mode: service:tailscale-basic-tool-calling
-    profiles:
-      - basic-tool-calling
-
-  tailscale-basic-tool-calling:
-    image: tailscale/tailscale:latest
-    container_name: ollama-tools
-    environment:
-      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ollama-tools
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - ${PWD}/tailscale-state-basic-tool-calling:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - net_admin
-    restart: unless-stopped
-    secrets:
-      - tsauthkey
-    healthcheck:
-      test: ["CMD", "tailscale", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    ports:
-      - 11436:11436
-    profiles:
-      - basic-tool-calling
-
-  engine-basic:
-    image: docker.io/ollama/ollama:latest
-    container_name: ollama-basic-engine
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-r1}
-    volumes:
-      - ollama-data-basic:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
-    network_mode: service:tailscale-basic
-    profiles:
-      - generic
-
-  tailscale-basic:
-    image: tailscale/tailscale:latest
-    container_name: ollama-basic
-    environment:
-      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ollama-basic
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - ${PWD}/tailscale-state-basic:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - net_admin
-    restart: unless-stopped
-    secrets:
-      - tsauthkey
-    healthcheck:
-      test: ["CMD", "tailscale", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    ports:
-      - 11437:11437
-    profiles:
-      - generic
-
-  engine-complex:
-    image: docker.io/ollama/ollama:latest
-    container_name: ollama-complex-engine
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-r1}
-    volumes:
-      - ollama-data-complex:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
-    network_mode: service:tailscale-complex
-    profiles:
-      - complex
-
-  tailscale-complex:
-    image: tailscale/tailscale:latest
-    container_name: ollama-complex
-    environment:
-      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ollama-complex
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - ${PWD}/tailscale-state-complex:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - net_admin
-    restart: unless-stopped
-    secrets:
-      - tsauthkey
-    healthcheck:
-      test: ["CMD", "tailscale", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    ports:
-      - 11438:11438
-    profiles:
-      - complex
+      - tail-cpu
+      - tail-gpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=tailscale
 
 secrets:
   tsauthkey:
-    file: ~/.secrets/tsauthkey-tag-llm.key
+    file: ${TSAUTHKEY_PATH:-./tsauthkey.key}
+    external: ${TSAUTHKEY_EXTERNAL:-false}
 
 volumes:
-  ollama-data-local:
-  ollama-data-chat:
-  ollama-data-basic-tool-calling:
-  ollama-data-basic:
-  ollama-data-complex:
-  tailscale-state-local:
-  tailscale-state-chat:
-  tailscale-state-basic-tool-calling:
-  tailscale-state-basic:
-  tailscale-state-complex:
+  model_data:
+  tail_tun_state:
