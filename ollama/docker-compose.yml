@@ -1,5 +1,5 @@
 services:
-  local:
+  ollama:
     image: docker.io/ollama/ollama:latest
     pull_policy: always
     tty: true
@@ -19,10 +19,10 @@ services:
       - 11434:11434
     profiles:
       - local
+      - nvidia
 
-  ts:
+  o4a:
     image: docker.io/ollama/ollama:latest
-    container_name: ollama
     pull_policy: always
     tty: true
     restart: unless-stopped
@@ -43,14 +43,15 @@ services:
       timeout: 10s
       retries: 5
       start_period: 10s
-    network_mode: service:ts-tun
+    network_mode: service:o4a-ts
     profiles:
       - tailscale
+      - nvidia
 
-  ts-tun:
+  o4a-ts:
     image: tailscale/tailscale:latest
     environment:
-      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ollama-${LLM_TYPE}
+      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname o4a${ENV_TYPE}${ENV_SUFFIX}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
     volumes:
