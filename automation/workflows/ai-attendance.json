@@ -1,0 +1,322 @@
+{
+  "name": "ai-attendance",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */5 * * * *"
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [180, 60],
+      "id": "a161707b-39c8-4a04-80eb-b414c8ed9ae9"
+    },
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [400, 260],
+      "id": "71c86562-7c3b-4203-a9fe-303b300bc707"
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\"assistants\": [\"o4a-6gb-gpu\"], \"requestid\": 123}"
+      },
+      "name": "Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [400, 460],
+      "id": "46042281-27e0-4afd-8469-0dbb82f914cd"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "assistants",
+              "value": "[\"o4a-6gb-gpu\"]"
+            },
+            {
+              "name": "requestid",
+              "value": "123"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set Default Instance",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [400, 60],
+      "id": "395b1eaf-6d57-4b8e-9cbb-eb5a703f6c40"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "assistants"
+            },
+            {
+              "fieldToAggregate": "requestid"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Aggregate",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [660, 260],
+      "id": "0ba01d2f-ff16-406e-95bc-2ef594403e2f"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://{{ $json.assistants[0] }}:11434/api/version",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "name": "Check Ollama Version",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [840, 260],
+      "id": "bcb6630d-11bb-45db-a2fd-37fac78f50a9"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $node['Check Ollama Version'].json['version'] !== undefined }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Check Availability",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1060, 260],
+      "id": "5f6ac2e3-c024-4168-a59b-c095c65b2e77"
+    },
+    {
+      "parameters": {
+        "operation": "toJson",
+        "fileName": "={{ '/tmp/' + $json.assistants[0] + '_enabled.json' }}",
+        "dataProperty": "={{ JSON.stringify($node['Check Ollama Version'].json) }}",
+        "options": {}
+      },
+      "name": "Convert to File Available",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [1280, 200],
+      "id": "96e59fcf-932f-41ba-bcc0-205b1716c10b"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/tmp/{{ $('Aggregate').item.json.assistants }}_enabled.json",
+        "options": {}
+      },
+      "name": "Log Available",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1500, 200],
+      "id": "370b2e8d-16b1-4252-9875-5d803c5709e0"
+    },
+    {
+      "parameters": {
+        "operation": "toJson",
+        "fileName": "={{ '/tmp/' + $json.assistants[0] + '_disabled.json' }}",
+        "dataProperty": "{\"status\": \"unavailable\"}",
+        "options": {}
+      },
+      "name": "Convert to File Unavailable",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [1280, 380],
+      "id": "a7b8c9d0-e1f2-4367-89ab-cd1234567890"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "fileName": "=/tmp/{{ $('Aggregate').item.json.assistants }}_enabled.json",
+        "options": {}
+      },
+      "name": "Delete Enabled File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1500, 380],
+      "id": "b8c9d0e1-f2g3-4567-9abc-de2345678901"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/tmp/{{ $('Aggregate').item.json.assistants }}_disabled.json",
+        "options": {}
+      },
+      "name": "Log Unavailable",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1720, 380],
+      "id": "c9d0e1f2-g3h4-5678-abcd-ef3456789012"
+    }
+  ],
+  "pinData": {
+    "Workflow Trigger": [
+      {
+        "json": {
+          "assistants": ["o4a-6gb-gpu"],
+          "requestid": 123
+        }
+      }
+    ],
+    "Manual Trigger": [
+      {
+        "json": {
+          "assistants": ["o4a-6gb-gpu"],
+          "requestid": 123
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Default Instance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Default Instance": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Check Ollama Version",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Ollama Version": {
+      "main": [
+        [
+          {
+            "node": "Check Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Availability": {
+      "main": [
+        [
+          {
+            "node": "Convert to File Available",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Convert to File Unavailable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File Available": {
+      "main": [
+        [
+          {
+            "node": "Log Available",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File Unavailable": {
+      "main": [
+        [
+          {
+            "node": "Delete Enabled File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Enabled File": {
+      "main": [
+        [
+          {
+            "node": "Log Unavailable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6cab3e33d63ae1f631063317b0f20ccd26820ceb18bd732505cddf951e76740c"
+  },
+  "id": "DtRhkjXMGCkZ9Bor",
+  "tags": [
+    {
+      "name": "checks",
+      "id": "VlfyGmeCHKjXbBcF",
+      "createdAt": "2025-06-18T19:39:03.258Z",
+      "updatedAt": "2025-06-18T19:39:03.258Z"
+    }
+  ]
+}
