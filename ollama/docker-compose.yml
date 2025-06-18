@@ -20,7 +20,7 @@ services:
     profiles:
       - local
 
-  tailscale:
+  ts:
     image: docker.io/ollama/ollama:latest
     container_name: ollama
     pull_policy: always
@@ -43,11 +43,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 10s
-    network_mode: service:tailscale-tun
+    network_mode: service:ts-tun
     profiles:
       - tailscale
 
-  tailscale-tun:
+  ts-tun:
     image: tailscale/tailscale:latest
     environment:
       - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ollama-${LLM_TYPE}
