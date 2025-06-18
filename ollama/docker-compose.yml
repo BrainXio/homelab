@@ -1,35 +1,68 @@
+name: o4a
+
+x-ollama-base: &ollama-base
+  image: docker.io/ollama/ollama:latest
+  pull_policy: always
+  tty: true
+  restart: unless-stopped
+  env_file:
+    - .env
+  volumes:
+    - model_data:/root/.ollama
+  healthcheck:
+    test: ["CMD", "ollama", "ps"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+    start_interval: 2s
+  labels:
+    - com.docker.compose.project=o4a
+    - app.name=ollama
+
+x-tailscale-base: &tailscale-base
+  image: tailscale/tailscale:latest
+  environment:
+    - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname o4a${ENV_TYPE}${ENV_SUFFIX}
+    - TS_STATE_DIR=/var/lib/tailscale
+    - TS_USERSPACE=false
+  volumes:
+    - tail_tun_state:/var/lib/tailscale
+  devices:
+    - /dev/net/tun:/dev/net/tun
+  cap_add:
+    - NET_ADMIN
+  restart: unless-stopped
+  secrets:
+    - tsauthkey
+  healthcheck:
+    test: ["CMD", "tailscale", "status"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+    start_interval: 2s
+  labels:
+    - com.docker.compose.project=o4a
+    - app.name=tailscale
+
 services:
-  ollama:
-    image: docker.io/ollama/ollama:latest
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - local-data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+  dev-loc-cpu:
+    <<: *ollama-base
     ports:
-      - 11434:11434
+      - ${OLLAMA_PORT:-11434}:11434
+    runtime: runc
     profiles:
-      - local
-      - nvidia
+      - loc-cpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=loc-cpu
 
-  o4a:
-    image: docker.io/ollama/ollama:latest
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - tailscale-data:/root/.ollama
+  dev-loc-gpu:
+    <<: *ollama-base
+    ports:
+      - ${OLLAMA_PORT:-11434}:11434
     deploy:
       resources:
         reservations:
@@ -37,45 +70,61 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
-    network_mode: service:o4a-ts
     profiles:
-      - tailscale
-      - nvidia
+      - loc-gpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=loc-gpu
 
-  o4a-ts:
-    image: tailscale/tailscale:latest
-    environment:
-      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname o4a${ENV_TYPE}${ENV_SUFFIX}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - tailscale-state:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - net_admin
-    restart: unless-stopped
-    secrets:
-      - tsauthkey
-    healthcheck:
-      test: ["CMD", "tailscale", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+  tail-cpu:
+    <<: *ollama-base
+    network_mode: service:tail-tun
+    depends_on:
+      tail-tun:
+        condition: service_healthy
+    runtime: runc
     profiles:
-      - tailscale
+      - tail-cpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=tail-cpu
+
+  tail-gpu:
+    <<: *ollama-base
+    network_mode: service:tail-tun
+    depends_on:
+      tail-tun:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - tail-gpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=ollama
+      - app.mode=tail-gpu
+
+  tail-tun:
+    <<: *tailscale-base
+    profiles:
+      - tail-cpu
+      - tail-gpu
+    labels:
+      - com.docker.compose.project=o4a
+      - app.name=tailscale
 
 secrets:
   tsauthkey:
-    file: ~/.secrets/tsauthkey-tag-llm.key
+    file: ${TSAUTHKEY_PATH:-./tsauthkey.key}
+    external: ${TSAUTHKEY_EXTERNAL:-false}
 
 volumes:
-  local-data:
-  tailscale-data:
-  tailscale-state:
+  model_data:
+  tail_tun_state:
