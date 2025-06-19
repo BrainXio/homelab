@@ -26,7 +26,7 @@ x-valkey-base: &valkey-base
 x-tailscale-base: &tailscale-base
   image: tailscale/tailscale:latest
   environment:
-    - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ${ENV_TYPE}cache${ENV_SUFFIX}
+    - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ${ENV_TYPE}valkey${ENV_SUFFIX}
     - TS_STATE_DIR=/var/lib/tailscale
     - TS_USERSPACE=false
   volumes:
