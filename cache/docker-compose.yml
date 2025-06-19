@@ -1,0 +1,91 @@
+name: cache
+
+x-valkey-base: &valkey-base
+  image: docker.io/valkey/valkey:8-alpine
+  pull_policy: always
+  command: valkey-server --save 30 1 --loglevel warning
+  restart: unless-stopped
+  env_file:
+    - .env
+  healthcheck:
+    test: ["CMD", "valkey-cli", "ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+    start_interval: 2s
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "1m"
+      max-file: "1"
+  labels:
+    - com.docker.compose.project=cache
+    - app.name=valkey
+
+x-tailscale-base: &tailscale-base
+  image: tailscale/tailscale:latest
+  environment:
+    - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ${ENV_TYPE}cache${ENV_SUFFIX}
+    - TS_STATE_DIR=/var/lib/tailscale
+    - TS_USERSPACE=false
+  volumes:
+    - tun_state:/var/lib/tailscale
+  devices:
+    - /dev/net/tun:/dev/net/tun
+  cap_add:
+    - NET_ADMIN
+  restart: unless-stopped
+  secrets:
+    - tsauthkey
+  healthcheck:
+    test: ["CMD", "tailscale", "status"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+    start_interval: 2s
+  labels:
+    - com.docker.compose.project=cache
+    - app.name=tailscale
+
+services:
+  app:
+    <<: *valkey-base
+    ports:
+      - ${VALKEY_PORT:-6379}:6379
+    profiles:
+      - loc
+    labels:
+      - com.docker.compose.project=cache
+      - app.name=valkey
+      - app.mode=loc
+
+  tail:
+    <<: *valkey-base
+    network_mode: service:tun
+    depends_on:
+      tun:
+        condition: service_healthy
+    profiles:
+      - tail
+    labels:
+      - com.docker.compose.project=cache
+      - app.name=valkey
+      - app.mode=tail
+
+  tun:
+    <<: *tailscale-base
+    profiles:
+      - tail
+    labels:
+      - com.docker.compose.project=cache
+      - app.name=tailscale
+
+secrets:
+  tsauthkey:
+    file: ${TSAUTHKEY_PATH:-./tsauthkey.key}
+    external: ${TSAUTHKEY_EXTERNAL:-false}
+
+volumes:
+  tun_state:
