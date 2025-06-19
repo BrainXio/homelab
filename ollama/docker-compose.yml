@@ -123,8 +123,7 @@ services:
 
 secrets:
   tsauthkey:
-    file: ${TSAUTHKEY_PATH:-./tsauthkey.key}
-    external: ${TSAUTHKEY_EXTERNAL:-false}
+    file: ${TSAUTHKEY_PATH:-./ollama-tsauthkey.key}
 
 volumes:
   model_data:
