@@ -1,4 +1,4 @@
-name: a8n
+name: automation
 
 x-n8n-base: &n8n-base
   image: docker.n8n.io/n8nio/n8n:latest
@@ -7,9 +7,8 @@ x-n8n-base: &n8n-base
   env_file:
     - .env
   volumes:
-    - loc_data:/home/node/.n8n
-    - loc_files:/files
-    - ../.data/:/data
+    - app_data:/home/node/.n8n
+    - app_files:/files
   healthcheck:
     test: ["CMD", "curl", "--fail", "http://localhost:5678/healthz"]
     interval: 10s
@@ -18,17 +17,17 @@ x-n8n-base: &n8n-base
     start_period: 10s
     start_interval: 2s
   labels:
-    - com.docker.compose.project=a8n
+    - com.docker.compose.project=automation
     - app.name=n8n
 
 x-tailscale-base: &tailscale-base
   image: tailscale/tailscale:latest
   environment:
-    - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname a8n${ENV_TYPE}${ENV_SUFFIX}
+    - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tsauthkey --accept-dns --hostname ${ENV_TYPE}automation${ENV_SUFFIX}
     - TS_STATE_DIR=/var/lib/tailscale
     - TS_USERSPACE=false
   volumes:
-    - tail_tun_state:/var/lib/tailscale
+    - tun_state:/var/lib/tailscale
   devices:
     - /dev/net/tun:/dev/net/tun
   cap_add:
@@ -44,42 +43,42 @@ x-tailscale-base: &tailscale-base
     start_period: 10s
     start_interval: 2s
   labels:
-    - com.docker.compose.project=a8n
+    - com.docker.compose.project=automation
     - app.name=tailscale
 
 services:
-  loc-n8n:
+  app:
     <<: *n8n-base
     ports:
       - ${N8N_PORT:-5678}:5678
     profiles:
-      - loc
+      - local
     labels:
-      - com.docker.compose.project=a8n
+      - com.docker.compose.project=automation
       - app.name=n8n
-      - app.mode=loc
+      - app.mode=local
 
-  tail-n8n:
+  tail:
     <<: *n8n-base
-    network_mode: service:tail-tun
+    network_mode: service:tun
     depends_on:
-      tail-tun:
+      tun:
         condition: service_healthy
     profiles:
       - tail
     labels:
-      - com.docker.compose.project=a8n
+      - com.docker.compose.project=automation
       - app.name=n8n
       - app.mode=tail
 
-  tail-tun:
+  tun:
     <<: *tailscale-base
     ports:
       - ${N8N_PORT:-5678}:5678
     profiles:
       - tail
     labels:
-      - com.docker.compose.project=a8n
+      - com.docker.compose.project=automation
       - app.name=tailscale
 
 secrets:
@@ -88,6 +87,6 @@ secrets:
     external: ${TSAUTHKEY_EXTERNAL:-false}
 
 volumes:
-  loc_data:
-  loc_files:
-  tail_tun_state:
+  app_data:
+  app_files:
+  tun_state:

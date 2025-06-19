@@ -1,97 +1,147 @@
-# a8n Deployment
+# Automation Deployment
 
-Deploys [n8n](https://n8n.io), a workflow automation platform, with Docker Compose, supporting local and Tailscale-based access.
+## Overview
+This project deploys n8n (a workflow automation platform) using Docker Compose. It supports two modes:
+- **Local**: Access n8n on `localhost:${N8N_PORT}` (default 5678).
+- **Tailscale**: Access n8n securely over a Tailscale VPN.
 
 ## Naming Convention
-- **Numeronym**: Service names use numeronyms, e.g., `a8n` for "n8n" (a + 8 letters + n), similar to `k8s` for Kubernetes. `tail-tun` represents the Tailscale tunnel.
-- **Project**: Named `a8n`, ensuring container names like `a8n-loc-n8n-1`.
+- **Project Name**: `automation`, used for container naming (e.g., `automation_app_1`).
+- **Services**:
+  - `app`: Local n8n instance.
+  - `tail`: Tailscale-connected n8n instance.
+  - `tun`: Tailscale VPN service.
 
 ## Prerequisites
-- Docker and Docker Compose
-- Tailscale account (for `tail` profile)
-- Bash shell
+- Docker and Docker Compose installed.
+- A Tailscale account for Tailscale mode.
+- Bash for setup scripts.
+- Ensure `cache/start.sh` and `cache/stop.sh` are in the `cache` directory.
 
 ## Setup
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd <repository-directory>
+   ```
 
-### 1. Clone Repository
-```bash
-git clone <repository-url>
-cd <repository-directory>
-```
+2. **Start the deployment**:
+   - Run the start script (located in the `cache` directory) to set up the Tailscale auth key and deploy services:
+     ```bash
+     chmod +x cache/start.sh
+     ./cache/start.sh
+     ```
+   - Follow prompts to create the Tailscale auth key (if missing) and choose a profile (`local` or `tail`).
+   - For pipelines or non-interactive environments, specify the profile:
+     ```bash
+     ./cache/start.sh --non-interactive --profile local
+     ```
+     or
+     ```bash
+     ./cache/start.sh --non-interactive --profile=local
+     ```
 
-### 2. Configure Environment
-Copy and edit `.env`:
-```bash
-cp .env.example .env
-```
+3. **Stop the deployment**:
+   - Run the stop script (located in the `cache` directory) to stop and remove services:
+     ```bash
+     chmod +x cache/stop.sh
+     ./cache/stop.sh
+     ```
+   - Follow prompts to choose a profile to stop.
+   - For pipelines or non-interactive environments, specify the profile:
+     ```bash
+     ./cache/stop.sh --non-interactive --profile local
+     ```
+     or
+     ```bash
+     ./cache/stop.sh --non-interactive --profile=local
+     ```
 
-Set in `.env`:
-- `N8N_PORT`: n8n web interface port (default: `5678`)
-- `ENV_TYPE`: Environment type (e.g., `-dev`)
-- `ENV_SUFFIX`: Instance suffix (e.g., `-0`)
-- `TSAUTHKEY_PATH`: Tailscale auth key file path
-- `TSAUTHKEY_EXTERNAL`: `true` for external secrets
-- n8n settings (e.g., `WEBHOOK_URL`, `N8N_PROTOCOL`)
+4. **Manual configuration (optional)**:
+   - **Configure .env**:
+     - Copy `.env.example` to `.env`:
+       ```bash
+       cp .env.example .env
+       ```
+     - Edit `.env` to set `TSAUTHKEY_PATH`, `ENV_TYPE`, `ENV_SUFFIX`, `N8N_PORT`, and other variables (e.g., `N8N_HOST`, `N8N_AUTH_JWT_SECRET`). See `.env.example` for details.
+   - **Generate Tailscale auth key**:
+     - Create a key at [Tailscale Admin Console](https://login.tailscale.com/admin/authkeys).
+     - Save it to the file specified in `TSAUTHKEY_PATH` (default: `./tsauthkey.key`):
+       ```bash
+       echo "tskey-xxxx" > tsauthkey.key
+       chmod 600 tsauthkey.key
+       ```
 
-Example `.env`:
-```plaintext
-N8N_PORT=5678
-ENV_TYPE=-dev
-ENV_SUFFIX=-0
-TSAUTHKEY_PATH=./tsauthkey.key
-TSAUTHKEY_EXTERNAL=false
-WEBHOOK_URL=https://a8n-workflow.example.com
-N8N_PROTOCOL=https
-```
+5. **Deploy manually (if not using start.sh)**:
+   - For local access:
+     ```bash
+     docker compose -f cache/docker-compose.yml --profile local up -d
+     ```
+   - For Tailscale access:
+     ```bash
+     docker compose -f cache/docker-compose.yml --profile tail up -d
+     ```
 
-### 3. Generate Tailscale Auth Key
-For `tail` profile, generate a key from [Tailscale Admin Console](https://login.tailscale.com/admin/authkeys):
-```bash
-mkdir -p ~/.secrets
-echo "<your-auth-key>" > ~/.secrets/tsauthkey.key
-chmod 600 ~/.secrets/tsauthkey.key
-```
+6. **Stop manually (if not using stop.sh)**:
+   - For local access:
+     ```bash
+     docker compose -f cache/docker-compose.yml --profile local down
+     ```
+   - For Tailscale access:
+     ```bash
+     docker compose -f cache/docker-compose.yml --profile tail down
+     ```
 
-Or set `TSAUTHKEY_PATH`:
-```bash
-export TSAUTHKEY_PATH=/path/to/tsauthkey.key
-```
-
-### 4. Deploy
-Choose a profile:
-- **Local**: `docker-compose --profile loc up -d`
-- **Tailscale**: `docker-compose --profile tail up -d`
-
-### 5. Verify
-Check services:
-```bash
-docker-compose ps
-```
-
-Test n8n web interface:
-- Local: `curl http://localhost:5678/healthz`
-- Tailscale: `curl http://a8n${ENV_TYPE}${ENV_SUFFIX}:5678/healthz`
+7. **Verify**:
+   - Check running services:
+     ```bash
+     docker compose -f cache/docker-compose.yml ps
+     ```
+   - Test n8n:
+     ```bash
+     curl http://localhost:${N8N_PORT:-5678}/healthz
+     ```
+     Expected output: `{"status":"ok"}`
+   - For Tailscale mode, use the Tailscale hostname (`${ENV_TYPE}automation${ENV_SUFFIX}`, e.g., `-devautomation-0`) from another Tailscale-connected device.
 
 ## Configuration
 - **Profiles**:
-  - `loc`: Local n8n instance.
-  - `tail`: Tailscale-enabled n8n instance.
+  - `local`: Local access via exposed port.
+  - `tail`: Tailscale VPN access.
 - **Services**:
-  - `loc-n8n`: Local n8n service.
-  - `tail-n8n`: Tailscale-enabled n8n service.
-  - `tail-tun`: Tailscale VPN service.
+  - `app`: Runs n8n with port mapping.
+  - `tail`: Runs n8n over Tailscale VPN, depends on `tun`.
+  - `tun`: Tailscale VPN service.
 - **Volumes**:
-  - `loc_data`: Persists n8n configurations and workflows.
-  - `loc_files`: Mounts local files for workflows.
-  - `tail_tun_state`: Persists Tailscale state.
+  - `app_data`: Persists n8n configuration (`/home/node/.n8n`).
+  - `app_files`: Mounts local files (`/files`).
+  - `tun_state`: Persists Tailscale state (`/var/lib/tailscale`).
 - **Networking**:
-  - Local: Exposes `N8N_PORT`.
-  - Tailscale: Uses `network_mode: service:tail-tun`.
+  - Local: Exposes `${N8N_PORT:-5678}`.
+  - Tailscale: Uses `network_mode: service:tun` for VPN connectivity.
+- **Secrets**:
+  - `tsauthkey`: Tailscale auth key, loaded from `${TSAUTHKEY_PATH}`.
 
 ## Troubleshooting
-- **Tailscale Issues**: Check logs (`docker-compose logs tail-tun`).
-- **Web Interface Errors**: Verify `N8N_PORT` or Tailscale hostname.
-- **File Access**: Ensure `./local_files` exists for `loc_files` volume.
+- **Tailscale not connecting**:
+  - Check `tun` logs:
+    ```bash
+    docker logs automation_tun_1
+    ```
+  - Verify `tsauthkey` file exists and contains a valid key.
+- **Port conflicts**:
+  - Ensure `${N8N_PORT}` is not in use or change it in `.env`.
+- **n8n not responding**:
+  - Check healthcheck status:
+    ```bash
+    docker inspect --format '{{.State.Health.Status}}' automation_app_1
+    ```
+- **Script failures**:
+  - Run with debugging:
+    ```bash
+    bash -x cache/start.sh
+    bash -x cache/stop.sh
+    ```
 
 ## License
 The Unlicense
