@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Default values
-TSAUTHKEY_PATH="${TSAUTHKEY_PATH:-~/.secrets/tsauthkey-tag-llm.key}"
+TSAUTHKEY_PATH="${TSAUTHKEY_PATH:-~/.secrets/ollama-tsauthkey.key}"
 DEFAULT_PROFILE="loc-cpu"
 
 # Detect GPU and VRAM

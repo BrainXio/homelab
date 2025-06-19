@@ -84,8 +84,7 @@ services:
 
 secrets:
   tsauthkey:
-    file: ${TSAUTHKEY_PATH:-./tsauthkey.key}
-    external: ${TSAUTHKEY_EXTERNAL:-false}
+    file: ${TSAUTHKEY_PATH:-./cache-tsauthkey.key}
 
 volumes:
   tun_state:

@@ -83,8 +83,7 @@ services:
 
 secrets:
   tsauthkey:
-    file: ${TSAUTHKEY_PATH:-./tsauthkey.key}
-    external: ${TSAUTHKEY_EXTERNAL:-false}
+    file: ${TSAUTHKEY_PATH:-./n8n-tsauthkey.key}
 
 volumes:
   app_data:

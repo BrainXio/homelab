@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Default values
-TSAUTHKEY_PATH="${TSAUTHKEY_PATH:-./tsauthkey.key}"
+TSAUTHKEY_PATH="${TSAUTHKEY_PATH:-~/.secrets/cache-tsauthkey.key}"
 OVERCOMMIT_SCRIPT="$(dirname "$0")/setup-overcommit.sh"
 DEFAULT_PROFILE="loc"
 
