@@ -27,7 +27,7 @@ x-tailscale-base: &tailscale-base
     - TS_STATE_DIR=/var/lib/tailscale
     - TS_USERSPACE=false
   volumes:
-    - tail_tun_state:/var/lib/tailscale
+    - tun_state:/var/lib/tailscale
   devices:
     - /dev/net/tun:/dev/net/tun
   cap_add:
@@ -128,4 +128,4 @@ secrets:
 
 volumes:
   model_data:
-  tail_tun_state:
+  tun_state:
