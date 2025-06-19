@@ -78,7 +78,7 @@ services:
       - app.name=ollama
       - app.mode=loc-gpu
 
-  tail-cpu:
+  cpu-tail:
     <<: *ollama-base
     network_mode: service:tail-tun
     depends_on:
@@ -86,13 +86,13 @@ services:
         condition: service_healthy
     runtime: runc
     profiles:
-      - tail-cpu
+      - cpu-tail
     labels:
       - com.docker.compose.project=ollama
       - app.name=ollama
-      - app.mode=${ENV_TYPE}tail-cpu
+      - app.mode=${ENV_TYPE}cpu-tail
 
-  tail-gpu:
+  gpu-tail:
     <<: *ollama-base
     network_mode: service:tail-tun
     depends_on:
@@ -106,17 +106,17 @@ services:
               count: all
               capabilities: [gpu]
     profiles:
-      - tail-gpu
+      - gpu-tail
     labels:
       - com.docker.compose.project=ollama
       - app.name=ollama
-      - app.mode=${ENV_TYPE}tail-gpu
+      - app.mode=${ENV_TYPE}gpu-tail
 
   tail-tun:
     <<: *tailscale-base
     profiles:
-      - tail-cpu
-      - tail-gpu
+      - cpu-tail
+      - gpu-tail
     labels:
       - com.docker.compose.project=ollama
       - app.name=tailscale
