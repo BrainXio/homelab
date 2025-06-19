@@ -73,6 +73,8 @@ services:
 
   tun:
     <<: *tailscale-base
+    ports:
+      - ${N8N_PORT:-5678}:5678
     profiles:
       - tail
     labels:
