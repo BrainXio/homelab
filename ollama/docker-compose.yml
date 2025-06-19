@@ -8,7 +8,7 @@ x-ollama-base: &ollama-base
   env_file:
     - .env
   volumes:
-    - app_data:/root/.ollama
+    - model_data:/root/.ollama
   healthcheck:
     test: ["CMD", "ollama", "ps"]
     interval: 10s
@@ -27,7 +27,7 @@ x-tailscale-base: &tailscale-base
     - TS_STATE_DIR=/var/lib/tailscale
     - TS_USERSPACE=false
   volumes:
-    - tun_state:/var/lib/tailscale
+    - tail_tun_state:/var/lib/tailscale
   devices:
     - /dev/net/tun:/dev/net/tun
   cap_add:
@@ -44,13 +44,14 @@ x-tailscale-base: &tailscale-base
     start_interval: 2s
   labels:
     - com.docker.compose.project=ollama
+    - app.env=${ENV_TYPE}
     - app.name=tailscale
 
 services:
-  cpu-app:
+  dev-loc-cpu:
     <<: *ollama-base
     ports:
-      - ${OLLAMA_PORT:-11435}:11434
+    - ${OLLAMA_PORT:-11435}:11434    
     runtime: runc
     profiles:
       - loc-cpu
@@ -59,10 +60,10 @@ services:
       - app.name=ollama
       - app.mode=loc-cpu
 
-  gpu-app:
+  dev-loc-gpu:
     <<: *ollama-base
     ports:
-      - ${OLLAMA_PORT:-11435}:11434
+    - ${OLLAMA_PORT:-11435}:11434
     deploy:
       resources:
         reservations:
@@ -77,7 +78,7 @@ services:
       - app.name=ollama
       - app.mode=loc-gpu
 
-  cpu-tail:
+  tail-cpu:
     <<: *ollama-base
     network_mode: service:tail-tun
     depends_on:
@@ -85,13 +86,13 @@ services:
         condition: service_healthy
     runtime: runc
     profiles:
-      - cpu-tail
+      - tail-cpu
     labels:
       - com.docker.compose.project=ollama
       - app.name=ollama
-      - app.mode=cpu-tail
+      - app.mode=${ENV_TYPE}tail-cpu
 
-  gpu-tail:
+  tail-gpu:
     <<: *ollama-base
     network_mode: service:tail-tun
     depends_on:
@@ -105,17 +106,17 @@ services:
               count: all
               capabilities: [gpu]
     profiles:
-      - gpu-tail
+      - tail-gpu
     labels:
       - com.docker.compose.project=ollama
       - app.name=ollama
-      - app.mode=gpu-tail
+      - app.mode=${ENV_TYPE}tail-gpu
 
   tail-tun:
     <<: *tailscale-base
     profiles:
-      - cpu-tail
-      - gpu-tail
+      - tail-cpu
+      - tail-gpu
     labels:
       - com.docker.compose.project=ollama
       - app.name=tailscale
@@ -126,5 +127,5 @@ secrets:
     external: ${TSAUTHKEY_EXTERNAL:-false}
 
 volumes:
-  app_data:
-  tun_state:
+  model_data:
+  tail_tun_state:
