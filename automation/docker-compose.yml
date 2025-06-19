@@ -7,8 +7,9 @@ x-n8n-base: &n8n-base
   env_file:
     - .env
   volumes:
-    - n8n_data:/home/node/.n8n
-    - n8n_files:/files
+    - loc_data:/home/node/.n8n
+    - loc_files:/files
+    - ../.data/:/data
   healthcheck:
     test: ["CMD", "curl", "--fail", "http://localhost:5678/healthz"]
     interval: 10s
@@ -73,6 +74,8 @@ services:
 
   tail-tun:
     <<: *tailscale-base
+    ports:
+      - ${N8N_PORT:-5678}:5678
     profiles:
       - tail
     labels:
@@ -85,6 +88,6 @@ secrets:
     external: ${TSAUTHKEY_EXTERNAL:-false}
 
 volumes:
-  n8n_data:
-  n8n_files:
+  loc_data:
+  loc_files:
   tail_tun_state:
